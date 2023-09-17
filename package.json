@@ -1,5 +1,5 @@
 {
-    "name": "@poll-github-repo/action",
+    "name": "poll-github-repo-action",
     "version": "0.0.2",
     "scripts": {
         "build": "ncc build src/index.ts -o dist",

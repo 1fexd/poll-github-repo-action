@@ -1,6 +1,6 @@
-name: Track and record changes in other repos
+name: poll-github-repo-action
 description: Cron-based job that continuously polls configured repo for changes and creates tracking issues for them
-author: Ilya Bylich
+author: Ilya Bylich & 1fexd
 
 branding:
   color: yellow
