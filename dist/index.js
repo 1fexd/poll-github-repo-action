@@ -13150,6 +13150,8 @@ var validations;
             formatErr("expected JSON to contain an object");
         }
         const { token, currentRepoOwner, currentRepo, currentRepoCachePath, currentRepoLabelToAdd, repoToSyncOwner, repoToSync, repoToSyncPath, trackingIssueTemplateTitle, trackingIssueTemplateBody, yesCreateIssues } = config;
+        if (yesCreateIssues !== true && yesCreateIssues !== false)
+            formatErr(`["yesCreateIssues"] must be a boolean`);
         if (!isString(token))
             stringErr("token");
         if (!isString(currentRepoOwner))
@@ -13158,7 +13160,7 @@ var validations;
             stringErr("currentRepo");
         if (!isString(currentRepoCachePath))
             stringErr("currentRepoCachePath");
-        if (!isString(currentRepoLabelToAdd))
+        if ((yesCreateIssues || currentRepoLabelToAdd !== undefined) && !isString(currentRepoLabelToAdd))
             stringErr("currentRepoLabelToAdd");
         if (!isString(repoToSyncOwner))
             stringErr("repoToSyncOwner");
@@ -13166,12 +13168,10 @@ var validations;
             stringErr("repoToSync");
         if (!isString(repoToSyncPath))
             stringErr("repoToSyncPath");
-        if (!isString(trackingIssueTemplateTitle))
+        if ((yesCreateIssues || trackingIssueTemplateTitle !== undefined) && !isString(trackingIssueTemplateTitle))
             stringErr("trackingIssueTemplateTitle");
-        if (!Array.isArray(trackingIssueTemplateBody))
+        if ((yesCreateIssues || trackingIssueTemplateBody !== undefined) && !Array.isArray(trackingIssueTemplateBody))
             formatErr(`["trackingIssueTemplateBody"] must be an array of strings`);
-        if (yesCreateIssues !== true && yesCreateIssues !== false)
-            formatErr(`["yesCreateIssues"] must be a boolean`);
         return {
             token,
             currentRepoOwner,
@@ -13217,12 +13217,12 @@ function ci_load() {
         currentRepoOwner,
         currentRepo,
         currentRepoCachePath: core.getInput("cache-path", { required: true }),
-        currentRepoLabelToAdd: core.getInput("tracking-issue-label", { required: true }),
+        currentRepoLabelToAdd: core.getInput("tracking-issue-label") ?? undefined,
         repoToSyncOwner: repoToSyncOwner,
         repoToSync: repoToSync,
         repoToSyncPath: core.getInput("path-to-sync", { required: true }),
-        trackingIssueTemplateTitle: core.getInput("tracking-issue-title", { required: true }),
-        trackingIssueTemplateBody: core.getMultilineInput("tracking-issue-body", { required: true }),
+        trackingIssueTemplateTitle: core.getInput("tracking-issue-title") ?? undefined,
+        trackingIssueTemplateBody: core.getMultilineInput("tracking-issue-body") ?? undefined,
         yesCreateIssues: core.getBooleanInput("yes-create-issues", { required: true })
     };
 }
@@ -13338,8 +13338,6 @@ async function run() {
     logger.endGroup();
     const getLastSyncDate = getLastSyncDateWith(config, logger);
     const pollCommits = pollCommitsWith(config, logger);
-    const renderIssueTemplates = renderIssueTemplatesWith(config);
-    const createTrackingIssues = createTrackingIssuesWith(config, logger);
     const createSyncCommit = createSyncCommitWith(config, logger);
     logger.startGroup("Fetching last sync date");
     let maybeLastSyncDate = await getLastSyncDate();
@@ -13353,7 +13351,19 @@ async function run() {
     const commits = await pollCommits({ since: lastSyncDate });
     logger.info(JSON.stringify(commits, null, 4));
     logger.endGroup();
+    const createdIssues = config.yesCreateIssues ? await createIssues(config, logger, commits) : [];
+    logger.startGroup("Saving last sync date");
+    const syncCommitUrl = await createSyncCommit();
+    logger.info(`Created commit ${syncCommitUrl}`);
+    logger.endGroup();
+    logger.startGroup("Starting output creation");
+    const actionOutput = setActionOutput(createdIssues, commits);
+    logger.info(`Set action output: ${JSON.stringify(actionOutput, null, 4)}`);
+    logger.endGroup();
+}
+async function createIssues(config, logger, commits) {
     logger.startGroup("Starting rendering");
+    const renderIssueTemplates = renderIssueTemplatesWith(config);
     const issuesToCreate = renderIssueTemplates(commits);
     issuesToCreate.forEach(({ title, body }) => {
         logger.info("=== TITLE");
@@ -13363,18 +13373,12 @@ async function run() {
     });
     logger.endGroup();
     logger.startGroup("Creating tracking issues");
+    const createTrackingIssues = createTrackingIssuesWith(config, logger);
     const createdIssues = await createTrackingIssues(issuesToCreate);
     logger.info(`Created issues:`);
     logger.info(JSON.stringify(createdIssues, null, 4));
     logger.endGroup();
-    logger.startGroup("Saving last sync date");
-    const syncCommitUrl = await createSyncCommit();
-    logger.info(`Created commit ${syncCommitUrl}`);
-    logger.endGroup();
-    logger.startGroup("Starting output creation");
-    const actionOutput = setActionOutput(createdIssues, commits);
-    logger.info(`Set action output: ${JSON.stringify(actionOutput, null, 4)}`);
-    logger.endGroup();
+    return createdIssues;
 }
 run();
 
